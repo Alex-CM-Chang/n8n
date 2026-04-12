@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 B 技術架構 v2.0 × Gemma4 成本優化版</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Noto+Sans+TC:wght@300;400;500;700&display=swap');
+
+  :root {
+    --bg: #080b10;
+    --bg2: #0d1117;
+    --card: #111520;
+    --card2: #161c2a;
+    --border: #1e2535;
+    --border2: #252d40;
+
+    /* Model colors */
+    --gemma: #1a9e6a;
+    --gemma-dim: #0f5c3e;
+    --gemma-glow: rgba(26,158,106,0.15);
+    --qwen: #e8623a;
+    --qwen-dim: #8a3a22;
+    --qwen-glow: rgba(232,98,58,0.15);
+    --claude: #7c5cfc;
+    --claude-dim: #4a3696;
+    --claude-glow: rgba(124,92,252,0.15);
+    --comfy: #0984e3;
+    --comfy-dim: #054d88;
+
+    --accent: #7c5cfc;
+    --accent2: #e84393;
+    --accent3: #1a9e6a;
+    --accent4: #f0c040;
+    --accent5: #0984e3;
+
+    --text: #c8d0e0;
+    --text-dim: #5a6580;
+    --text-bright: #eef2ff;
+
+    --saving: #1a9e6a;
+    --warn: #f0c040;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Noto Sans TC', system-ui, sans-serif;
+    line-height: 1.75;
+    min-height: 100vh;
+  }
+
+  /* Background grid */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,92,252,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,92,252,0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .container { max-width: 1240px; margin: 0 auto; padding: 48px 28px; position: relative; z-index: 1; }
+
+  /* Header */
+  .page-header {
+    border-bottom: 1px solid var(--border2);
+    padding-bottom: 32px;
+    margin-bottom: 48px;
+  }
+  .version-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--gemma-glow);
+    border: 1px solid var(--gemma);
+    color: var(--gemma);
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    padding: 4px 12px;
+    border-radius: 4px;
+    letter-spacing: 1px;
+    margin-bottom: 16px;
+  }
+  .version-badge::before { content: '●'; font-size: 8px; }
+  h1 {
+    font-size: 30px;
+    color: var(--text-bright);
+    font-weight: 700;
+    line-height: 1.3;
+    margin-bottom: 10px;
+  }
+  h1 span { color: var(--gemma); }
+  .subtitle { color: var(--text-dim); font-size: 13.5px; }
+  .subtitle strong { color: var(--accent4); }
+
+  h2 {
+    font-size: 18px;
+    color: var(--text-bright);
+    margin: 52px 0 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+  h2::before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 22px;
+    background: var(--accent);
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+  h3 { font-size: 15px; color: var(--accent2); margin: 20px 0 10px; }
+  h4 { font-size: 13px; color: var(--accent4); margin: 16px 0 8px; font-family: 'Space Mono', monospace; letter-spacing: 0.3px; }
+
+  p { margin-bottom: 10px; font-size: 14px; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 44px 0; }
+
+  /* Model legend */
+  .model-legend {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 20px 0 32px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-dot.gemma { background: var(--gemma); box-shadow: 0 0 6px var(--gemma); }
+  .legend-dot.qwen { background: var(--qwen); box-shadow: 0 0 6px var(--qwen); }
+  .legend-dot.claude { background: var(--claude); box-shadow: 0 0 6px var(--claude); }
+  .legend-dot.comfy { background: var(--comfy); box-shadow: 0 0 6px var(--comfy); }
+  .legend-item .lname { color: var(--text-bright); font-weight: 700; font-size: 12px; }
+  .legend-item .ldesc { color: var(--text-dim); font-size: 11px; margin-left: 2px; }
+
+  /* Architecture diagram */
+  .arch-diagram {
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 28px;
+    margin: 20px 0;
+    overflow-x: auto;
+  }
+  .arch-row {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+  .arch-label {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    padding: 12px 8px;
+    border-radius: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 34px;
+    font-family: 'Space Mono', monospace;
+    flex-shrink: 0;
+  }
+  .arch-label.l1 { background: #1e2535; color: var(--text-dim); border: 1px solid var(--border2); }
+  .arch-label.l2 { background: #1a2040; color: #6080c0; border: 1px solid #2a3060; }
+  .arch-label.l3 { background: #0f2a1a; color: var(--gemma); border: 1px solid var(--gemma-dim); }
+  .arch-label.l4 { background: #1a1040; color: var(--claude); border: 1px solid var(--claude-dim); }
+  .arch-label.l5 { background: #1a1000; color: var(--accent4); border: 1px solid #5a4000; }
+
+  .arch-items { display: flex; gap: 8px; flex: 1; flex-wrap: wrap; }
+  .arch-box {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 13px 15px;
+    min-width: 130px;
+    flex: 1;
+    transition: border-color 0.2s;
+  }
+  .arch-box:hover { border-color: var(--border2); }
+  .arch-box.gemma-box { border-color: var(--gemma-dim); background: linear-gradient(135deg, var(--card2), rgba(26,158,106,0.06)); }
+  .arch-box.qwen-box { border-color: var(--qwen-dim); background: linear-gradient(135deg, var(--card2), rgba(232,98,58,0.06)); }
+  .arch-box.claude-box { border-color: var(--claude-dim); background: linear-gradient(135deg, var(--card2), rgba(124,92,252,0.06)); }
+  .arch-box.comfy-box { border-color: var(--comfy-dim); background: linear-gradient(135deg, var(--card2), rgba(9,132,227,0.06)); }
+  .arch-box .name { font-size: 12px; font-weight: 700; color: var(--text-bright); }
+  .arch-box .tech { font-size: 10px; margin-top: 3px; }
+  .arch-box .tech.g { color: var(--gemma); }
+  .arch-box .tech.q { color: var(--qwen); }
+  .arch-box .tech.c { color: var(--claude); }
+  .arch-box .tech.b { color: var(--comfy); }
+  .arch-box .desc { font-size: 10px; color: var(--text-dim); margin-top: 4px; line-height: 1.5; }
+  .arch-box .cost { font-size: 10px; color: var(--saving); margin-top: 6px; font-weight: 700; font-family: 'Space Mono', monospace; }
+  .arch-box .cost.paid { color: var(--accent4); }
+
+  .arrow-down {
+    text-align: center;
+    color: var(--border2);
+    font-size: 18px;
+    margin: 6px 0;
+    letter-spacing: 50px;
+    padding-left: 50px;
+  }
+
+  /* Model routing table */
+  .routing-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .routing-table th {
+    background: var(--card2);
+    color: var(--text-dim);
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 2px solid var(--border2);
+  }
+  .routing-table td {
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    font-size: 13px;
+  }
+  .routing-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .model-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 10px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .model-tag.gemma { background: var(--gemma-glow); color: var(--gemma); border: 1px solid var(--gemma-dim); }
+  .model-tag.qwen  { background: var(--qwen-glow);  color: var(--qwen);  border: 1px solid var(--qwen-dim); }
+  .model-tag.claude { background: var(--claude-glow); color: var(--claude); border: 1px solid var(--claude-dim); }
+  .model-tag::before { content: '●'; font-size: 7px; }
+
+  /* Workflow cards */
+  .workflow-card {
+    background: var(--card);
+    border: 1px solid var(--border2);
+    border-radius: 16px;
+    padding: 26px;
+    margin: 18px 0;
+  }
+  .workflow-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-size: 9px;
+    padding: 3px 9px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 0.5px;
+  }
+  .badge.webhook { background: rgba(232,67,147,0.15); color: var(--accent2); border: 1px solid rgba(232,67,147,0.3); }
+  .badge.cron { background: rgba(26,158,106,0.15); color: var(--gemma); border: 1px solid var(--gemma-dim); }
+
+  /* Flow */
+  .flow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    overflow-x: auto;
+    padding: 14px 0 8px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border2) transparent;
+  }
+  .flow-node {
+    min-width: 138px;
+    max-width: 165px;
+    background: var(--card2);
+    border: 2px solid var(--border2);
+    border-radius: 10px;
+    padding: 12px 13px;
+    text-align: center;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .flow-node.trigger { border-color: #2a3a2a; }
+  .flow-node.gemma-node { border-color: var(--gemma-dim); background: linear-gradient(160deg, var(--card2), rgba(26,158,106,0.07)); }
+  .flow-node.qwen-node { border-color: var(--qwen-dim); background: linear-gradient(160deg, var(--card2), rgba(232,98,58,0.07)); }
+  .flow-node.claude-node { border-color: var(--claude-dim); background: linear-gradient(160deg, var(--card2), rgba(124,92,252,0.07)); }
+  .flow-node.comfy-node { border-color: var(--comfy-dim); background: linear-gradient(160deg, var(--card2), rgba(9,132,227,0.07)); }
+  .flow-node.action { border-color: var(--border2); }
+  .flow-node.condition { border-color: #4a4000; }
+  .flow-node .node-icon { font-size: 18px; margin-bottom: 4px; }
+  .flow-node .node-name { font-size: 11px; font-weight: 700; color: var(--text-bright); line-height: 1.4; }
+  .flow-node .node-detail { font-size: 9px; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
+  .flow-node .node-model {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 9px;
+    font-family: 'Space Mono', monospace;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-weight: 700;
+  }
+  .node-model.g { background: var(--gemma-glow); color: var(--gemma); }
+  .node-model.q { background: var(--qwen-glow); color: var(--qwen); }
+  .node-model.c { background: var(--claude-glow); color: var(--claude); }
+  .node-model.b { background: rgba(9,132,227,0.12); color: var(--comfy); }
+
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 5px;
+    color: var(--text-dim);
+    font-size: 16px;
+    flex-shrink: 0;
+    padding-top: 8px;
+  }
+
+  .flow-branch { display: flex; flex-direction: column; gap: 7px; }
+  .flow-branch-row { display: flex; align-items: center; gap: 0; }
+  .branch-label {
+    font-size: 9px;
+    color: var(--accent4);
+    min-width: 55px;
+    text-align: right;
+    padding-right: 8px;
+    font-weight: 700;
+    font-family: 'Space Mono', monospace;
+  }
+
+  /* Cost table */
+  .cost-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 14px 0;
+    font-size: 13px;
+  }
+  .cost-table th {
+    background: var(--card2);
+    color: var(--text-dim);
+    padding: 10px 14px;
+    text-align: left;
+    font-size: 10px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 2px solid var(--border2);
+  }
+  .cost-table td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
+    vertical-align: middle;
+  }
+  .cost-table tr:hover td { background: rgba(255,255,255,0.015); }
+  .cost-table .total td { color: var(--saving); font-weight: 700; font-size: 15px; border-top: 2px solid var(--gemma-dim); }
+  .cost-table .old-row td { color: var(--text-dim); text-decoration: line-through; opacity: 0.5; }
+  .strike { text-decoration: line-through; color: var(--text-dim); }
+  .free { color: var(--saving); font-weight: 700; font-family: 'Space Mono', monospace; }
+  .paid-tag { color: var(--accent4); font-family: 'Space Mono', monospace; }
+
+  /* Code block */
+  .code-block {
+    background: #060910;
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 16px 20px;
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: #8090b0;
+    overflow-x: auto;
+    margin: 10px 0;
+    white-space: pre;
+    line-height: 1.7;
+  }
+  .code-block .comment { color: #3a4560; }
+  .code-block .keyword { color: var(--claude); }
+  .code-block .str { color: var(--gemma); }
+  .code-block .func { color: var(--accent2); }
+  .code-block .num { color: var(--accent4); }
+
+  /* Specs grid */
+  .specs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 14px;
+    margin: 16px 0;
+  }
+  .spec-card {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 10px;
+    padding: 18px;
+  }
+  .spec-card .label { font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; font-family: 'Space Mono', monospace; }
+  .spec-card .value { font-size: 20px; color: var(--text-bright); font-weight: 700; margin-top: 6px; }
+  .spec-card .note { font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.6; }
+
+  /* Savings comparison */
+  .savings-box {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 16px;
+    align-items: center;
+    margin: 20px 0;
+  }
+  .cost-col {
+    background: var(--card2);
+    border: 1px solid var(--border2);
+    border-radius: 12px;
+    padding: 20px 22px;
+    text-align: center;
+  }
+  .cost-col.old { border-color: rgba(232,67,147,0.3); }
+  .cost-col.new { border-color: var(--gemma-dim); }
+  .cost-col .col-label { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; font-family: 'Space Mono', monospace; margin-bottom: 8px; }
+  .cost-col.old .col-label { color: rgba(232,67,147,0.7); }
+  .cost-col.new .col-label { color: var(--gemma); }
+  .cost-col .col-amount { font-size: 32px; font-weight: 700; font-family: 'Space Mono', monospace; }
+  .cost-col.old .col-amount { color: rgba(232,67,147,0.8); }
+  .cost-col.new .col-amount { color: var(--gemma); }
+  .cost-col .col-sub { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .savings-arrow { text-align: center; font-size: 28px; color: var(--text-dim); }
+  .savings-pct {
+    text-align: center;
+    background: var(--gemma-glow);
+    border: 1px solid var(--gemma-dim);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .savings-pct .pct { font-size: 36px; font-weight: 700; color: var(--gemma); font-family: 'Space Mono', monospace; }
+  .savings-pct .pct-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Info callout */
+  .callout {
+    border-left: 3px solid;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 14px 0;
+    font-size: 13px;
+  }
+  .callout.warn { border-color: var(--warn); background: rgba(240,192,64,0.06); color: var(--warn); }
+  .callout.info { border-color: var(--gemma); background: rgba(26,158,106,0.06); color: #90d0b0; }
+  .callout.note { border-color: var(--claude); background: var(--claude-glow); color: #a090e0; }
+
+  .highlight { color: var(--gemma); font-weight: 600; }
+  ul { padding-left: 18px; margin: 8px 0; }
+  li { font-size: 13px; margin-bottom: 5px; color: var(--text); }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    padding: 48px 0 20px;
+    color: var(--text-dim);
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    border-top: 1px solid var(--border);
+    margin-top: 48px;
+  }
+  .footer span { color: var(--gemma); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- Header -->
+<div class="page-header">
+  <div class="version-badge">v2.0 · GEMMA4 OPTIMIZED · APRIL 2026</div>
+  <h1>方案 B：自建+混合 AI 代操經紀<br><span>Gemma 4 成本優化版</span></h1>
+  <p class="subtitle">原始架構基礎上整合開源模型路由策略 · 依任務性質分配 Gemma 4 / Qwen3 / Claude API · <strong>目標削減 55–70% API 支出</strong></p>
+</div>
+
+<!-- Model Legend -->
+<div class="model-legend">
+  <div class="legend-item">
+    <div class="legend-dot gemma"></div>
+    <span class="lname">Gemma 4 26B MoE</span>
+    <span class="ldesc">· 結構分析 / 翻譯 / 審核 / 排程邏輯</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot qwen"></div>
+    <span class="lname">Qwen3 30B / 72B</span>
+    <span class="ldesc">· 行銷文案 / 成人文字生成（寬鬆審查）</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot claude"></div>
+    <span class="lname">Claude Haiku API</span>
+    <span class="ldesc">· 高階推理 / VIP 聊天 / 鯨魚級客戶</span>
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot comfy"></div>
+    <span class="lname">ComfyUI（本機）</span>
+    <span class="ldesc">· 圖像生成 · SDXL + LoRA</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Section 1: Architecture -->
+<h2>一、系統整體架構圖（v2.0 模型路由版）</h2>
+<p>在原有五層架構基礎上，AI 處理層升級為<span class="highlight">三引擎路由設計</span>：以任務敏感度 + 成本為依據，自動分配 Gemma 4、Qwen3、Claude API，達到效能與成本的最佳平衡。</p>
+
+<div class="arch-diagram">
+
+  <div class="arch-row">
+    <div class="arch-label l1">觸發層</div>
+    <div class="arch-items">
+      <div class="arch-box">
+        <div class="name">OnlyFans Webhook</div>
+        <div class="tech">Supercreator API / Polling</div>
+        <div class="desc">新訊息、新訂閱、取消訂閱事件</div>
+        <div class="cost">$0</div>
+      </div>
+      <div class="arch-box">
+        <div class="name">SWAG 通知</div>
+        <div class="tech">Browser Extension + Polling</div>
+        <div class="desc">直播通知、私訊、打賞事件</div>
+        <div class="cost">$0</div>
+      </div>
+      <div class="arch-box">
+        <div class="name">Telegram Bot</div>
+        <div class="tech">Telegram Bot API</div>
+        <div class="desc">粉絲群組訊息、加入/離開事件</div>
+        <div class="cost">$0</div>
+      </div>
+      <div class="arch-box">
+        <div class="name">Cron 定時器</div>
+        <div class="tech">n8n Schedule Trigger</div>
+        <div class="desc">每日排程發文、週報生成、數據拉取</div>
+        <div class="cost">$0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓ ↓ ↓ ↓</div>
+
+  <div class="arch-row">
+    <div class="arch-label l2">編排層</div>
+    <div class="arch-items">
+      <div class="arch-box" style="flex: 2;">
+        <div class="name">n8n 工作流引擎（自建）</div>
+        <div class="tech" style="color: var(--accent5);">Docker Self-Hosted · 6 條核心工作流</div>
+        <div class="desc">所有自動化邏輯中樞。接收觸發 → <strong style="color:#8090c0;">模型路由判斷</strong> → AI 處理 → 執行輸出 → 記錄數據</div>
+        <div class="cost">$0（開源自建）· VPS $5/月</div>
+      </div>
+      <div class="arch-box">
+        <div class="name">人設資料庫</div>
+        <div class="tech" style="color: var(--accent5);">PostgreSQL / SQLite</div>
+        <div class="desc">創作者語氣模板、PPV 規則、禁忌詞、模型路由規則</div>
+        <div class="cost">$0</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓ ↓ ↓ ↓</div>
+
+  <!-- AI Layer - 3 engines -->
+  <div class="arch-row">
+    <div class="arch-label l3">AI 層</div>
+    <div class="arch-items">
+      <div class="arch-box gemma-box">
+        <div class="name">引擎 A · 邏輯推理</div>
+        <div class="tech g">Gemma 4 26B MoE · Ollama 本機</div>
+        <div class="desc">結構提取 / 內容審核 / 翻譯 / 情緒分類 / 排程邏輯 / 週報分析 / ComfyUI Prompt 生成</div>
+        <div class="cost">$0 邊際（共用 GPU）</div>
+      </div>
+      <div class="arch-box qwen-box">
+        <div class="name">引擎 B · 文案生成</div>
+        <div class="tech q">Qwen3 30B / 72B · Ollama 本機</div>
+        <div class="desc">行銷文案 / 跨平台引流推文 / 成人相關文字生成（審查限制少）/ 粉絲互動回覆（一般等級）</div>
+        <div class="cost">$0 邊際（共用 GPU）</div>
+      </div>
+      <div class="arch-box claude-box">
+        <div class="name">引擎 C · 高價值任務</div>
+        <div class="tech c">Claude Haiku API · 按需呼叫</div>
+        <div class="desc">VIP 鯨魚聊天 / 合約摘要 / 需要高品質中文語感的關鍵文案 / fallback 備援</div>
+        <div class="cost paid">~$3-8/月（大幅縮減）</div>
+      </div>
+      <div class="arch-box comfy-box">
+        <div class="name">引擎 D · 圖像生成</div>
+        <div class="tech b">ComfyUI + SDXL/Flux · 本機</div>
+        <div class="desc">創作者分身圖、宣傳圖、社群引流素材、LoRA 個人化模型</div>
+        <div class="cost">$0 邊際</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓ ↓ ↓ ↓</div>
+
+  <div class="arch-row">
+    <div class="arch-label l4">輸出層</div>
+    <div class="arch-items">
+      <div class="arch-box"><div class="name">Twitter/X</div><div class="tech" style="color:#6080c0;">X API</div><div class="desc">NSFW 引流推文</div><div class="cost">$0-100/月</div></div>
+      <div class="arch-box"><div class="name">Reddit</div><div class="tech" style="color:#6080c0;">Reddit API</div><div class="desc">Subreddit 定向</div><div class="cost">$0</div></div>
+      <div class="arch-box"><div class="name">Telegram</div><div class="tech" style="color:#6080c0;">Bot API</div><div class="desc">VIP 頻道推送</div><div class="cost">$0</div></div>
+      <div class="arch-box"><div class="name">Instagram</div><div class="tech" style="color:#6080c0;">Meta Graph API</div><div class="desc">生活風格貼文</div><div class="cost">$0</div></div>
+      <div class="arch-box"><div class="name">Bluesky</div><div class="tech" style="color:#6080c0;">AT Protocol</div><div class="desc">NSFW 備援</div><div class="cost">$0</div></div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓ ↓ ↓</div>
+
+  <div class="arch-row">
+    <div class="arch-label l5">數據層</div>
+    <div class="arch-items">
+      <div class="arch-box"><div class="name">營運儀表板</div><div class="tech" style="color:#8090c0;">Google Sheets + Apps Script</div><div class="desc">即時營收追蹤、各平台 ROI</div><div class="cost">$0</div></div>
+      <div class="arch-box"><div class="name">粉絲 CRM</div><div class="tech" style="color:#8090c0;">Fans-CRM 免費版 + 自建標籤</div><div class="desc">粉絲分層、消費記錄、流失預警</div><div class="cost">$0</div></div>
+      <div class="arch-box"><div class="name">日誌與監控</div><div class="tech" style="color:#8090c0;">n8n Execution Log + Telegram</div><div class="desc">錯誤告警、API 配額、異常偵測</div><div class="cost">$0</div></div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Section 2: Model Routing -->
+<h2>二、模型路由決策表（n8n 路由節點邏輯）</h2>
+<p>n8n 在 AI 處理層前插入一個 <strong style="color:var(--accent4);">Router 節點</strong>，根據任務類型、粉絲等級、敏感度三個維度，決定呼叫哪個引擎。以下是完整路由規則：</p>
+
+<table class="routing-table">
+  <tr>
+    <th>任務類型</th>
+    <th>觸發條件</th>
+    <th>指定模型</th>
+    <th>理由</th>
+  </tr>
+  <tr>
+    <td>粉絲聊天 — 一般粉 (&lt;$20)</td>
+    <td>fan_tier = basic</td>
+    <td><span class="model-tag qwen">Qwen3 30B</span></td>
+    <td>批量高頻、審查限制少、中英文OK</td>
+  </tr>
+  <tr>
+    <td>粉絲聊天 — 活躍粉 ($20-100)</td>
+    <td>fan_tier = active</td>
+    <td><span class="model-tag qwen">Qwen3 72B</span></td>
+    <td>升級推理能力，仍零邊際成本</td>
+  </tr>
+  <tr>
+    <td>粉絲聊天 — VIP ($100-500)</td>
+    <td>fan_tier = vip</td>
+    <td><span class="model-tag claude">Claude Haiku</span></td>
+    <td>語感品質要求高，值得付費</td>
+  </tr>
+  <tr>
+    <td>粉絲聊天 — 鯨魚 (&gt;$500)</td>
+    <td>fan_tier = whale</td>
+    <td><span class="model-tag claude">Claude Haiku</span></td>
+    <td>高客單價，品質優先</td>
+  </tr>
+  <tr>
+    <td>跨平台行銷文案</td>
+    <td>workflow = content_gen</td>
+    <td><span class="model-tag qwen">Qwen3 30B</span></td>
+    <td>成人相關文案審查限制更少</td>
+  </tr>
+  <tr>
+    <td>ComfyUI Prompt 生成</td>
+    <td>workflow = image_gen</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span></td>
+    <td>結構化輸出強，prompt engineering OK</td>
+  </tr>
+  <tr>
+    <td>內容審核 / 違規詞過濾</td>
+    <td>node = safety_filter</td>
+    <td><span class="model-tag gemma">Gemma 4 E4B</span></td>
+    <td>官方支援此場景，輕量快速</td>
+  </tr>
+  <tr>
+    <td>中英翻譯</td>
+    <td>task = translate</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span></td>
+    <td>140+ 語言原生，256K context</td>
+  </tr>
+  <tr>
+    <td>粉絲情緒分析 / 分類</td>
+    <td>task = sentiment</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span></td>
+    <td>結構化推理任務，成本趨零</td>
+  </tr>
+  <tr>
+    <td>週報趨勢分析 + 建議</td>
+    <td>workflow = weekly_report</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span></td>
+    <td>長文分析 256K context，免費</td>
+  </tr>
+  <tr>
+    <td>月內容日曆規劃</td>
+    <td>workflow = content_calendar</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span></td>
+    <td>結構化 JSON 輸出，不需付費 API</td>
+  </tr>
+  <tr>
+    <td>高價值合約 / 法律文件摘要</td>
+    <td>doc_type = contract</td>
+    <td><span class="model-tag claude">Claude Haiku</span></td>
+    <td>精確度要求高，fallback 保底</td>
+  </tr>
+</table>
+
+<div class="callout info">
+  💡 <strong>n8n 路由實作方式：</strong>在 AI 節點前加一個 <code>Switch</code> 節點，讀取 <code>fan_tier</code>、<code>task_type</code>、<code>workflow_id</code> 三個變數，分叉到不同的 HTTP Request 節點（分別指向 Ollama 本機 API 或 Anthropic API）。Ollama 提供 OpenAI 相容 endpoint，換 base URL 即可，prompt 不用重寫。
+</div>
+
+<hr class="divider">
+
+<!-- Section 3: Workflows -->
+<h2>三、n8n 核心工作流設計（v2.0 · 含模型標示）</h2>
+
+<!-- Workflow 1 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #1：AI 智能聊天（OnlyFans / SWAG 私訊）
+    <span class="badge webhook">Webhook 觸發</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">📨</div>
+      <div class="node-name">新私訊進入</div>
+      <div class="node-detail">Webhook 接收<br>OF/SWAG 新訊息</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">🔍</div>
+      <div class="node-name">粉絲識別</div>
+      <div class="node-detail">查 CRM 標籤<br>消費等級 / 歷史</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node condition">
+      <div class="node-icon">🔀</div>
+      <div class="node-name">模型路由判斷</div>
+      <div class="node-detail">依 fan_tier<br>決定引擎</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node qwen-node">
+      <div class="node-icon">🤖</div>
+      <div class="node-name">Qwen3（一般/活躍粉）</div>
+      <div class="node-detail">本機推理<br>含 PPV 推薦邏輯</div>
+      <div class="node-model q">Qwen3 30B/72B</div>
+    </div>
+    <div class="flow-arrow" style="color: var(--text-dim); font-size: 12px; padding: 0 2px; padding-top:8px;">or</div>
+    <div class="flow-node claude-node">
+      <div class="node-icon">💎</div>
+      <div class="node-name">Claude Haiku（VIP / 鯨魚）</div>
+      <div class="node-detail">付費 API<br>最高語感品質</div>
+      <div class="node-model c">Claude Haiku</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">🛡️</div>
+      <div class="node-name">安全過濾</div>
+      <div class="node-detail">違規詞審核<br>平台合規檢查</div>
+      <div class="node-model g">Gemma 4 E4B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📤</div>
+      <div class="node-name">發送回覆</div>
+      <div class="node-detail">回傳至 OF/SWAG<br>記錄到 CRM</div>
+    </div>
+  </div>
+
+  <h4>分層回覆策略（v2.0 更新）</h4>
+  <table class="cost-table">
+    <tr><th>粉絲等級</th><th>月消費</th><th>使用模型</th><th>回覆策略</th><th>AI 介入率</th></tr>
+    <tr>
+      <td>🥉 一般粉</td><td>&lt;$20</td>
+      <td><span class="model-tag qwen">Qwen3 30B</span></td>
+      <td>AI 全自動・標準話術・每日 PPV 推一次</td><td>100%</td>
+    </tr>
+    <tr>
+      <td>🥈 活躍粉</td><td>$20-100</td>
+      <td><span class="model-tag qwen">Qwen3 72B</span></td>
+      <td>個性化推薦・情緒偵測升級關懷</td><td>90%</td>
+    </tr>
+    <tr>
+      <td>🥇 VIP</td><td>$100-500</td>
+      <td><span class="model-tag claude">Claude Haiku</span></td>
+      <td>AI 初稿 → 你審核後發出・獨家預告</td><td>70%</td>
+    </tr>
+    <tr>
+      <td>💎 鯨魚</td><td>&gt;$500</td>
+      <td><span class="model-tag claude">Claude Haiku</span></td>
+      <td>AI 提供建議 → 你或創作者親自回覆</td><td>30%</td>
+    </tr>
+  </table>
+
+  <div class="callout note">
+    📌 <strong>成本影響：</strong>假設每位創作者每月 5,000 條訊息，其中 80% 是一般/活躍粉 → 4,000 條改用 Qwen3（本機零成本），只有 1,000 條 VIP/鯨魚訊息呼叫 Claude Haiku API。原本全部 Claude 約 $8-15，現在 <strong>降到 $1.5-3</strong>。
+  </div>
+</div>
+
+<!-- Workflow 2 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #2：跨平台內容生成 + 自動排程
+    <span class="badge cron">Cron 每日 08:00</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">⏰</div>
+      <div class="node-name">每日排程觸發</div>
+      <div class="node-detail">08:00 UTC<br>啟動每日內容流程</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📅</div>
+      <div class="node-name">讀取內容日曆</div>
+      <div class="node-detail">從 Google Sheets<br>取今日主題</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node qwen-node">
+      <div class="node-icon">✍️</div>
+      <div class="node-name">文案生成</div>
+      <div class="node-detail">5 平台文案<br>各自適配尺度</div>
+      <div class="node-model q">Qwen3 30B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">🖼️</div>
+      <div class="node-name">SD Prompt 生成</div>
+      <div class="node-detail">依主題自動生成<br>ComfyUI Prompt</div>
+      <div class="node-model g">Gemma 4 26B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node comfy-node">
+      <div class="node-icon">🎨</div>
+      <div class="node-name">ComfyUI 出圖</div>
+      <div class="node-detail">SDXL / Flux<br>批次 4 張候選</div>
+      <div class="node-model b">ComfyUI</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node condition">
+      <div class="node-icon">🔀</div>
+      <div class="node-name">平台路由</div>
+      <div class="node-detail">按平台規則<br>分發各 API</div>
+    </div>
+  </div>
+
+  <div style="margin-left: 60px; margin-top: 12px;">
+    <div class="flow-branch">
+      <div class="flow-branch-row">
+        <span class="branch-label">Twitter →</span>
+        <div class="flow-node action" style="min-width: 120px;">
+          <div class="node-name">X API 發推</div>
+          <div class="node-detail">NSFW 標記・含圖</div>
+        </div>
+      </div>
+      <div class="flow-branch-row">
+        <span class="branch-label">Reddit →</span>
+        <div class="flow-node action" style="min-width: 120px;">
+          <div class="node-name">人工佇列 ⚠️</div>
+          <div class="node-detail">需你確認再發</div>
+        </div>
+      </div>
+      <div class="flow-branch-row">
+        <span class="branch-label">Telegram →</span>
+        <div class="flow-node action" style="min-width: 120px;">
+          <div class="node-name">Bot 推送</div>
+          <div class="node-detail">VIP 頻道・限時預覽</div>
+        </div>
+      </div>
+      <div class="flow-branch-row">
+        <span class="branch-label">IG →</span>
+        <div class="flow-node action" style="min-width: 120px;">
+          <div class="node-name">Graph API 排程</div>
+          <div class="node-detail">安全版・生活風格</div>
+        </div>
+      </div>
+      <div class="flow-branch-row">
+        <span class="branch-label">Bluesky →</span>
+        <div class="flow-node action" style="min-width: 120px;">
+          <div class="node-name">AT Protocol</div>
+          <div class="node-detail">NSFW 標籤・引流</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h4>v2.0 Prompt 更新：呼叫 Qwen3 本機 API（Ollama OpenAI 相容格式）</h4>
+  <div class="code-block"><span class="comment">// n8n HTTP Request 節點 · 改 base URL 即切換引擎</span>
+{
+  <span class="comment">// v1.0 原設定（Claude API）</span>
+  <span class="comment">// url: "https://api.anthropic.com/v1/messages"</span>
+  <span class="comment">// headers: { "x-api-key": "{{$env.ANTHROPIC_KEY}}" }</span>
+
+  <span class="comment">// v2.0 新設定（Ollama 本機，OpenAI 相容格式）</span>
+  <span class="str">"url"</span>: <span class="str">"http://localhost:11434/v1/chat/completions"</span>,
+  <span class="str">"method"</span>: <span class="str">"POST"</span>,
+  <span class="str">"body"</span>: {
+    <span class="str">"model"</span>: <span class="str">"qwen3:30b"</span>,  <span class="comment">// 或 "gemma4:27b" 切換引擎</span>
+    <span class="str">"max_tokens"</span>: <span class="num">1024</span>,
+    <span class="str">"messages"</span>: [
+      {
+        <span class="str">"role"</span>: <span class="str">"system"</span>,
+        <span class="str">"content"</span>: <span class="str">"你是成人內容創作者的社群行銷專家。根據今日主題，為以下 5 個平台各生成引流貼文。\n規則：\n- Twitter/X：可暗示性，150字內，含hashtag，帶OF連結\n- Reddit：符合目標subreddit風格，標題吸睛\n- Instagram：生活化，不露骨，link in bio暗示\n- Telegram：直接銷售語氣，可附價格，限時感\n- Bluesky：社群感，加NSFW標籤\n輸出JSON格式，每平台一個key。"</span>
+      },
+      {
+        <span class="str">"role"</span>: <span class="str">"user"</span>,
+        <span class="str">"content"</span>: <span class="str">"創作者：{{$json.creator_name}}\n今日主題：{{$json.today_theme}}\n目標Subreddit：{{$json.target_subreddits}}"</span>
+      }
+    ]
+  }
+}</div>
+</div>
+
+<!-- Workflow 3 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #3：AI 圖像生成管線
+    <span class="badge webhook">按需觸發 / 批次排程</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">🖼️</div>
+      <div class="node-name">圖像需求</div>
+      <div class="node-detail">來自 WF#2<br>或手動觸發</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📂</div>
+      <div class="node-name">載入創作者 LoRA</div>
+      <div class="node-detail">LoRA 模型<br>+ 風格 Checkpoint</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">📝</div>
+      <div class="node-name">SD Prompt 生成</div>
+      <div class="node-detail">根據主題自動<br>生成 ComfyUI Prompt</div>
+      <div class="node-model g">Gemma 4 26B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node comfy-node">
+      <div class="node-icon">🎨</div>
+      <div class="node-name">ComfyUI 出圖</div>
+      <div class="node-detail">SDXL / Flux<br>批次 4 張候選</div>
+      <div class="node-model b">ComfyUI</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">⭐</div>
+      <div class="node-name">品質評分</div>
+      <div class="node-detail">自動評估候選圖<br>篩選最佳 1-2 張</div>
+      <div class="node-model g">Gemma 4 視覺</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">💾</div>
+      <div class="node-name">儲存 + 標記</div>
+      <div class="node-detail">加 #AI 標籤<br>存入內容庫</div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    🆕 <strong>v2.0 新增：</strong>品質評分節點改用 <strong>Gemma 4 多模態視覺能力</strong>（原生圖像理解），自動對 4 張候選圖打分，選出最符合人設的一張，減少人工篩選時間。Gemma 4 支援圖像輸入，本機跑無額外成本。
+  </div>
+</div>
+
+<!-- Workflow 4 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #4：Telegram 社群全自動化
+    <span class="badge webhook">Webhook 即時</span>
+    <span class="badge cron">Cron 每日 2 次</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">👋</div>
+      <div class="node-name">新成員加入</div>
+      <div class="node-detail">Telegram Webhook</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node qwen-node">
+      <div class="node-icon">💬</div>
+      <div class="node-name">歡迎訊息生成</div>
+      <div class="node-detail">個性化歡迎語<br>含創作者人設</div>
+      <div class="node-model q">Qwen3 30B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">🏷️</div>
+      <div class="node-name">分群標籤</div>
+      <div class="node-detail">免費群 / VIP 群<br>語言偏好</div>
+    </div>
+  </div>
+
+  <br>
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">⏰</div>
+      <div class="node-name">定時推送</div>
+      <div class="node-detail">每日 2 次<br>Cron 觸發</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">📊</div>
+      <div class="node-name">內容選擇</div>
+      <div class="node-detail">從內容庫選<br>今日最佳預覽</div>
+      <div class="node-model g">Gemma 4 26B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📤</div>
+      <div class="node-name">發送到群組</div>
+      <div class="node-detail">圖片 + 文案<br>+ OF/SWAG 連結</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📊</div>
+      <div class="node-name">追蹤點擊</div>
+      <div class="node-detail">UTM 短連結<br>記錄轉化數據</div>
+    </div>
+  </div>
+</div>
+
+<!-- Workflow 5 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #5：AI 數據分析 + 週報生成
+    <span class="badge cron">Cron 每週一 09:00</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">📊</div>
+      <div class="node-name">週一觸發</div>
+      <div class="node-detail">拉取上週數據</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">🔗</div>
+      <div class="node-name">多源數據彙整</div>
+      <div class="node-detail">OF 營收 + 各平台<br>互動 + CRM 數據</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">🧠</div>
+      <div class="node-name">趨勢分析</div>
+      <div class="node-detail">長文數據推理<br>256K context</div>
+      <div class="node-model g">Gemma 4 26B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📝</div>
+      <div class="node-name">生成週報</div>
+      <div class="node-detail">寫入 Google Sheets<br>摘要發到 Telegram</div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    💡 週報分析是長文輸入任務，Gemma 4 的 <strong>256K context window</strong> 完全夠用，且本機推理成本為零。原本用 Claude API 處理這個工作流，每月省下約 $2-5。
+  </div>
+</div>
+
+<!-- Workflow 6 -->
+<div class="workflow-card">
+  <div class="workflow-title">
+    工作流 #6：AI 內容日曆生成器
+    <span class="badge cron">Cron 每月 1 日</span>
+  </div>
+
+  <div class="flow">
+    <div class="flow-node trigger">
+      <div class="node-icon">📅</div>
+      <div class="node-name">月初觸發</div>
+      <div class="node-detail">每月 1 日</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📈</div>
+      <div class="node-name">歷史數據</div>
+      <div class="node-detail">上月最佳表現<br>內容類型 + 時段</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node gemma-node">
+      <div class="node-icon">🗓️</div>
+      <div class="node-name">月曆規劃</div>
+      <div class="node-detail">生成 30 天<br>主題+平台+時段</div>
+      <div class="node-model g">Gemma 4 26B</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">📋</div>
+      <div class="node-name">寫入 Sheets</div>
+      <div class="node-detail">Google Sheets<br>內容日曆表</div>
+    </div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-node action">
+      <div class="node-icon">✅</div>
+      <div class="node-name">你審核</div>
+      <div class="node-detail">Telegram 通知<br>確認或調整</div>
+    </div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Section 4: Cost -->
+<h2>四、v2.0 月成本試算（含 Gemma 4 / Qwen3 替換後）</h2>
+
+<!-- Savings comparison -->
+<div class="savings-box">
+  <div class="cost-col old">
+    <div class="col-label">v1.0 原始成本（每位創作者）</div>
+    <div class="col-amount">$28–67</div>
+    <div class="col-sub">Claude Haiku API 全包</div>
+  </div>
+  <div class="savings-arrow">→</div>
+  <div class="savings-pct">
+    <div class="pct">↓55–65%</div>
+    <div class="pct-label">API 費用節省幅度</div>
+  </div>
+  <div class="savings-arrow">→</div>
+  <div class="cost-col new">
+    <div class="col-label">v2.0 優化後（每位創作者）</div>
+    <div class="col-amount">$14–32</div>
+    <div class="col-sub">開源模型承接 85% 任務</div>
+  </div>
+</div>
+
+<table class="cost-table">
+  <tr><th>項目</th><th>v1.0 工具</th><th>v2.0 工具</th><th>v1.0 月費</th><th>v2.0 月費</th></tr>
+  <tr>
+    <td>AI 聊天引擎（一般/活躍粉）</td>
+    <td class="strike">Claude Haiku API</td>
+    <td><span class="model-tag qwen">Qwen3 30B/72B</span> 本機</td>
+    <td class="strike paid-tag">$4-12</td>
+    <td class="free">$0</td>
+  </tr>
+  <tr>
+    <td>AI 聊天引擎（VIP / 鯨魚）</td>
+    <td>Claude Haiku API</td>
+    <td><span class="model-tag claude">Claude Haiku</span>（保留）</td>
+    <td class="paid-tag">$4-12</td>
+    <td class="paid-tag">$1.5–3</td>
+  </tr>
+  <tr>
+    <td>文案生成（跨平台）</td>
+    <td class="strike">Claude Haiku API</td>
+    <td><span class="model-tag qwen">Qwen3 30B</span> 本機</td>
+    <td class="strike paid-tag">$3-5</td>
+    <td class="free">$0</td>
+  </tr>
+  <tr>
+    <td>圖像 Prompt 生成 + 審核</td>
+    <td class="strike">Claude Haiku API</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span> 本機</td>
+    <td class="strike paid-tag">$1-2</td>
+    <td class="free">$0</td>
+  </tr>
+  <tr>
+    <td>週報分析 / 月曆規劃</td>
+    <td class="strike">Claude Haiku API</td>
+    <td><span class="model-tag gemma">Gemma 4 26B</span> 本機</td>
+    <td class="strike paid-tag">$2-4</td>
+    <td class="free">$0</td>
+  </tr>
+  <tr>
+    <td>圖像生成（ComfyUI）</td>
+    <td>本機（不變）</td>
+    <td>本機（不變）</td>
+    <td class="free">$0</td>
+    <td class="free">$0</td>
+  </tr>
+  <tr>
+    <td>影片生成</td>
+    <td>Kling / Pika</td>
+    <td>Kling / Pika（不變）</td>
+    <td class="paid-tag">$10-37</td>
+    <td class="paid-tag">$10-37</td>
+  </tr>
+  <tr>
+    <td>VPS（n8n + DB）</td>
+    <td>Hetzner CX22</td>
+    <td>Hetzner CX22（不變）</td>
+    <td class="paid-tag">$5</td>
+    <td class="paid-tag">$5</td>
+  </tr>
+  <tr>
+    <td>GPU 算力（Ollama 本機）</td>
+    <td>—（新增）</td>
+    <td>RTX 4070 工作站</td>
+    <td>—</td>
+    <td class="paid-tag">~$5（電費）</td>
+  </tr>
+  <tr>
+    <td>硬體攤提</td>
+    <td>RTX 4070</td>
+    <td>RTX 4070（共用）</td>
+    <td class="paid-tag">~$5</td>
+    <td class="paid-tag">~$5</td>
+  </tr>
+  <tr>
+    <td>X API（選配）</td>
+    <td>X Basic</td>
+    <td>X Basic（不變）</td>
+    <td class="paid-tag">$0-100</td>
+    <td class="paid-tag">$0-100</td>
+  </tr>
+  <tr class="total">
+    <td colspan="3"><strong>每位創作者月總成本</strong></td>
+    <td><strong>$28–67</strong><br><small style="font-size:11px; color: var(--text-dim);">≈ NT$860–2,050</small></td>
+    <td><strong>$14–32</strong><br><small style="font-size:11px; color: var(--text-dim);">≈ NT$430–980</small></td>
+  </tr>
+</table>
+
+<p>⚡ 以服務 <span class="highlight">8 位創作者</span>計算，月固定支出從 <strong style="color:var(--accent2);">NT$6,900–16,400</strong> 降到 <strong style="color:var(--gemma);">NT$3,440–7,840</strong>，每年節省約 <strong style="color:var(--gemma);">NT$40,000–100,000</strong>。</p>
+
+<hr class="divider">
+
+<!-- Section 5: Hardware -->
+<h2>五、硬體規格（v2.0 新增本機 LLM 需求）</h2>
+
+<div class="specs-grid">
+  <div class="spec-card">
+    <div class="label">LLM 推理工作站</div>
+    <div class="value">RTX 4070 12GB</div>
+    <div class="note">Qwen3 30B：需 Q4 量化，約 18GB VRAM → 需要系統 RAM offload 或升級 4070 Ti Super（16GB）<br><strong style="color:var(--warn);">建議：4070 Ti Super 或 4080 16GB</strong></div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Gemma 4 26B MoE</div>
+    <div class="value">~14GB VRAM</div>
+    <div class="note">MoE 架構只激活 4B 參數，實際 VRAM 需求低於 Dense 模型。RTX 4070 12GB 可跑 Q4 量化版（略需 offload）</div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Qwen3 72B（最強文案）</div>
+    <div class="value">需 2x GPU 或量化</div>
+    <div class="note">72B 全精度需 40GB+，Q4 量化約 40GB。初期建議用 Qwen3 30B（14GB Q4），效果已足夠。72B 留給未來升級。</div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Ollama 模型共用</div>
+    <div class="value">單 GPU 輪流推理</div>
+    <div class="note">Gemma 4 和 Qwen3 不同時運行，Ollama 自動管理模型 loading/unloading。n8n 工作流序列執行時不衝突。</div>
+  </div>
+</div>
+
+<div class="callout warn">
+  ⚠️ <strong>VRAM 限制提醒：</strong>RTX 4070 12GB 跑 Qwen3 30B Q4 量化（約 18GB）會需要部分 CPU offload，推理速度約 5-15 tokens/秒（仍可接受，非即時對話場景）。若要同時跑圖像生成，需要排程分離。建議初期先測試實際速度是否符合需求，再決定是否升級到 RTX 4080 16GB（約 NT$25,000 補差價）。
+</div>
+
+<hr class="divider">
+
+<!-- Section 6: Deployment -->
+<h2>六、部署順序（v2.0 含開源模型設定）</h2>
+
+<div class="specs-grid">
+  <div class="spec-card">
+    <div class="label">Week 1</div>
+    <div class="value">基礎建設</div>
+    <div class="note">① 租 VPS、安裝 Docker + n8n + PostgreSQL<br>② 本機安裝 Ollama<br>③ <code>ollama pull gemma4:27b</code><br>④ <code>ollama pull qwen3:30b</code><br>⑤ 測試本機 API endpoint</div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Week 2</div>
+    <div class="value">模型評估</div>
+    <div class="note">⑥ 用現有 prompt 測試 Qwen3 文案品質<br>⑦ 測試 Gemma 4 週報分析品質<br>⑧ 決定哪些節點可替換<br>⑨ 設定 ComfyUI + SDXL 圖像生成</div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Week 3</div>
+    <div class="value">工作流改建</div>
+    <div class="note">⑩ n8n 加入 Router Switch 節點<br>⑪ 改建工作流 #1（聊天路由）<br>⑫ 改建工作流 #2（文案改用 Qwen3）<br>⑬ 訓練第一位創作者 LoRA</div>
+  </div>
+  <div class="spec-card">
+    <div class="label">Week 4+</div>
+    <div class="value">完整上線</div>
+    <div class="note">⑭ 所有工作流上線<br>⑮ 第一位創作者正式運營<br>⑯ 監控各模型輸出品質<br>⑰ 根據數據微調路由規則</div>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Section 7: Notes -->
+<h2>七、關鍵技術備註（v2.0 新增事項）</h2>
+
+<div class="workflow-card">
+  <h3>Ollama 本機 API 設定</h3>
+  <p>Ollama 提供 OpenAI 相容的 <code>/v1/chat/completions</code> endpoint，n8n 的 HTTP Request 節點只需修改 base URL，所有 prompt 結構完全相容，不需重寫工作流邏輯。</p>
+  <div class="code-block"><span class="comment"># 啟動 Ollama 並允許外部連接（n8n VPS → 本機工作站）</span>
+<span class="str">OLLAMA_HOST=0.0.0.0 ollama serve</span>
+
+<span class="comment"># 拉取模型</span>
+<span class="str">ollama pull gemma4:27b</span>   <span class="comment"># 16.5GB 下載</span>
+<span class="str">ollama pull qwen3:30b</span>     <span class="comment"># 18GB 下載</span>
+
+<span class="comment"># 確認 API 正常</span>
+<span class="str">curl http://localhost:11434/v1/chat/completions</span> \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{"model":"gemma4:27b","messages":[{"role":"user","content":"test"}]}'</span></div>
+
+  <h3>Gemma 4 成人內容限制處理</h3>
+  <p>Gemma 4 預設有安全濾鏡，<strong style="color:var(--warn);">成人相關文字生成任務不建議直接使用官方版</strong>。建議：</p>
+  <ul>
+    <li>成人文案生成 → 改用 Qwen3（審查限制顯著更少）</li>
+    <li>Gemma 4 只負責邏輯分析、翻譯、審核等中性任務</li>
+    <li>如需 Gemma 4 處理敏感文案，需使用 Hugging Face 上的社群去審查微調版（abliterated variants）</li>
+  </ul>
+
+  <h3>Claude Haiku vs Qwen3：中文語感比較</h3>
+  <p>Claude Haiku 在繁體中文語感上仍有優勢，尤其是需要細膩情感表達的 VIP 聊天。Qwen3 的繁體中文品質近年大幅提升，一般粉絲的互動已難以區分差異。建議：初期全部先用 Qwen3 測試，只在粉絲投訴「回覆感覺不自然」時，才把該等級升回 Claude。</p>
+
+  <h3>AI 合規揭露（不變，必須保留）</h3>
+  <p>所有工作流無論使用哪個模型，都必須保留 AI 標記邏輯：聊天開頭自動插入 AI 輔助聲明、圖像加 #AIGenerated metadata、發文附 AI 標籤。<span style="color:var(--warn); font-weight:700;">此合規底線不因模型替換而改變。</span></p>
+</div>
+
+<div class="footer">
+  方案 B 技術架構文件 <span>v2.0 · Gemma4 優化版</span> · Generated for Alex · April 2026
+</div>
+
+</div>
+</body>
+</html>
